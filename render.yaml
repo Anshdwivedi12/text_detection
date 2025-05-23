@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: text-detection-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      - key: TESSERACT_PATH
+        value: /usr/bin/tesseract
+
+  - type: static
+    name: text-detection-frontend
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://text-detection-backend.onrender.com 

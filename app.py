@@ -18,7 +18,7 @@ CORS(app, resources={
     r"/api/*": {
         "origins": [
             "http://localhost:3000",
-            "https://your-app-frontend.onrender.com"
+            "https://text-detection-frontend.onrender.com"
         ],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type"]
@@ -26,23 +26,28 @@ CORS(app, resources={
 })
 
 # Configure Tesseract path
-possible_paths = [
-    r'C:\Program Files\Tesseract-OCR\tesseract.exe',
-    r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
-    r'C:\Tesseract-OCR\tesseract.exe'
-]
-
-tesseract_path = None
-for path in possible_paths:
-    if os.path.exists(path):
-        tesseract_path = path
-        break
+if os.environ.get('TESSERACT_PATH'):
+    # Production environment
+    tesseract_path = os.environ.get('TESSERACT_PATH')
+else:
+    # Development environment
+    possible_paths = [
+        r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+        r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+        r'C:\Tesseract-OCR\tesseract.exe',
+        '/usr/bin/tesseract'  # Linux path
+    ]
+    tesseract_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            tesseract_path = path
+            break
 
 if tesseract_path:
     pytesseract.pytesseract.tesseract_cmd = tesseract_path
     logger.info("Tesseract found at: %s", tesseract_path)
 else:
-    logger.error("Tesseract not found. Please install Tesseract OCR from: https://github.com/UB-Mannheim/tesseract/wiki")
+    logger.error("Tesseract not found. Please install Tesseract OCR")
     logger.error("After installation, make sure to add Tesseract to your system PATH")
     raise Exception("Tesseract OCR is not installed. Please install it first.")
 
