@@ -77,9 +77,22 @@ def get_tesseract_path():
         r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
         r'C:\Tesseract-OCR\tesseract.exe',
         '/usr/bin/tesseract',
-        '/usr/local/bin/tesseract'
+        '/usr/local/bin/tesseract',
+        '/opt/homebrew/bin/tesseract'  # macOS Homebrew path
     ]
     
+    # Try to find tesseract using which command
+    try:
+        import subprocess
+        which_result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
+        if which_result.returncode == 0:
+            path = which_result.stdout.strip()
+            if os.path.exists(path):
+                return path
+    except Exception as e:
+        logger.warning(f"Error running which command: {str(e)}")
+    
+    # Check all possible paths
     for path in possible_paths:
         if os.path.exists(path):
             return path
@@ -93,7 +106,13 @@ if tesseract_path:
 else:
     logger.error("Tesseract not found. Please install Tesseract OCR")
     logger.error("After installation, make sure to add Tesseract to your system PATH")
-    raise Exception("Tesseract OCR is not installed. Please install it first.")
+    # Instead of raising an exception, we'll set a default path for Render
+    if os.environ.get('RENDER'):
+        tesseract_path = '/usr/bin/tesseract'
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        logger.info("Using default Tesseract path for Render: %s", tesseract_path)
+    else:
+        raise Exception("Tesseract OCR is not installed. Please install it first.")
 
 def validate_image_data(image_data):
     if not image_data:
