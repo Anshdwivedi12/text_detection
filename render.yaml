@@ -4,11 +4,18 @@ services:
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
+    plan: standard
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
+        value: 3.9.18
       - key: TESSERACT_PATH
         value: /usr/bin/tesseract
+      - key: FLASK_DEBUG
+        value: "False"
+      - key: MAX_IMAGE_SIZE
+        value: "10485760"  # 10MB in bytes
+      - key: MAX_REQUESTS_PER_MINUTE
+        value: "60"
 
   - type: static
     name: text-detection-frontend
