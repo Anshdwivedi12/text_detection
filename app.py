@@ -107,10 +107,12 @@ else:
     logger.error("Tesseract not found. Please install Tesseract OCR")
     logger.error("After installation, make sure to add Tesseract to your system PATH")
     # Instead of raising an exception, we'll set a default path for Render
+    # We will still raise an exception if not on Render and Tesseract is not found
     if os.environ.get('RENDER'):
+        # In Render, Tesseract should be installed via Aptfile, so we expect it at /usr/bin/tesseract
         tesseract_path = '/usr/bin/tesseract'
-        pytesseract.pytesseract.tesseract_cmd = tesseract_path
-        logger.info("Using default Tesseract path for Render: %s", tesseract_path)
+        # We'll set pytesseract.tesseract_cmd inside process_image as well for extra certainty
+        logger.info("Setting default Tesseract path for Render: %s", tesseract_path)
     else:
         raise Exception("Tesseract OCR is not installed. Please install it first.")
 
@@ -140,8 +142,12 @@ def validate_image_size(image):
         raise ValueError(f"Image size too large. Maximum size is {MAX_IMAGE_SIZE/1024/1024}MB")
 
 def process_image(image_data):
-    if not tesseract_path:
-        raise Exception("Tesseract OCR is not installed. Please install it first.")
+    # Explicitly set tesseract_cmd here for certainty in deployment environments
+    if tesseract_path:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+    else:
+         # This case should ideally not be reached on Render with Aptfile and the check above
+         raise Exception("Tesseract OCR path not set.")
 
     try:
         validate_image_data(image_data)
