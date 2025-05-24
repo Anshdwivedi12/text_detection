@@ -65,15 +65,22 @@ def rate_limit(f):
 
 # Configure Tesseract path
 def get_tesseract_path():
-    # First check environment variable
-    if os.environ.get('TESSERACT_PATH'):
-        path = os.environ.get('TESSERACT_PATH')
-        if os.path.exists(path):
-            logger.info(f"Tesseract path found via TESSERACT_PATH env var: {path}")
-            return path
-        logger.warning(f"Tesseract path from TESSERACT_PATH env var does not exist: {path}")
+    # Prioritize environment variable TESSERACT_PATH (especially for deployment environments like Render)
+    tesseract_env_path = os.environ.get('TESSERACT_PATH')
+    if tesseract_env_path:
+        if os.path.exists(tesseract_env_path):
+            logger.info(f"Tesseract path found via TESSERACT_PATH env var: {tesseract_env_path}")
+            return tesseract_env_path
+        else:
+            logger.warning(f"Tesseract path specified in TESSERACT_PATH env var does not exist: {tesseract_env_path}")
 
-    # Then check common installation paths
+    # Fallback to checking PATH and common installation paths
+    tesseract_in_path = shutil.which('tesseract')
+    if tesseract_in_path:
+        logger.info(f"Tesseract found in PATH via shutil.which: {tesseract_in_path}")
+        return tesseract_in_path
+
+    # Then check common local installation paths (less likely on Render)
     possible_paths = [
         r'C:\Program Files\Tesseract-OCR\tesseract.exe',
         r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
@@ -82,14 +89,8 @@ def get_tesseract_path():
         '/usr/local/bin/tesseract',
         '/opt/homebrew/bin/tesseract'  # macOS Homebrew path
     ]
-    
-    # Try to find tesseract using which command
-    tesseract_in_path = shutil.which('tesseract')
-    if tesseract_in_path:
-        logger.info(f"Tesseract found in PATH via shutil.which: {tesseract_in_path}")
-        return tesseract_in_path
 
-    # Check all possible paths
+    logger.info(f"Tesseract not found in PATH or env var. Checking common paths: {possible_paths}")
     for path in possible_paths:
         if os.path.exists(path):
             logger.info(f"Tesseract found at common path: {path}")
