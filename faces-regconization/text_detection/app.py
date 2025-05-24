@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from functools import wraps
 import time
 from werkzeug.utils import secure_filename
-import shutil # Import shutil for debugging
+import shutil
 
 # Load environment variables
 load_dotenv()
@@ -31,15 +31,15 @@ ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/bmp'}
 MAX_IMAGE_DIMENSION = 4096  # Maximum width or height
 
 app = Flask(__name__)
+
+# Get allowed origins from environment variable or use defaults
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,https://text-detection-frontend.onrender.com,https://text-detection-frontend.vercel.app').split(',')
+
 CORS(app, resources={
     r"/api/*": {
-        "origins": [
-            "http://localhost:3000",
-            "https://text-detection-frontend.onrender.com",
-            "https://text-detection-frontend.vercel.app"
-        ],
+        "origins": ALLOWED_ORIGINS,
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+        "allow_headers": ["Content-Type", "Authorization"]
     }
 })
 
@@ -83,13 +83,12 @@ def get_tesseract_path():
         '/opt/homebrew/bin/tesseract'  # macOS Homebrew path
     ]
     
-    # Try to find tesseract using which command (more reliable on Linux)
+    # Try to find tesseract using which command
     tesseract_in_path = shutil.which('tesseract')
     if tesseract_in_path:
         logger.info(f"Tesseract found in PATH via shutil.which: {tesseract_in_path}")
         return tesseract_in_path
 
-    logger.info(f"Tesseract not found in PATH. Checking common paths: {possible_paths}")
     # Check all possible paths
     for path in possible_paths:
         if os.path.exists(path):
@@ -100,32 +99,13 @@ def get_tesseract_path():
 
 tesseract_path = get_tesseract_path()
 
-# --- Debugging Logs for Render Environment ---
-logger.info(f"Application starting. Checking Tesseract path in environment.")
-logger.info(f"Value of PATH environment variable: {os.environ.get('PATH')}")
-logger.info(f"Result of shutil.which('tesseract'): {shutil.which('tesseract')}")
-logger.info(f"Determined tesseract_path variable: {tesseract_path}")
-# --- End Debugging Logs ---
-
 if tesseract_path and os.path.exists(tesseract_path):
     pytesseract.pytesseract.tesseract_cmd = tesseract_path
     logger.info("Pytesseract command set to: %s", pytesseract.pytesseract.tesseract_cmd)
-elif os.environ.get('RENDER'):
-     # On Render, if tesseract_path is still None, something is wrong with the Aptfile installation
-     # We expect it at /usr/bin/tesseract if apt-get was successful.
-     expected_render_path = '/usr/bin/tesseract'
-     if os.path.exists(expected_render_path):
-         tesseract_path = expected_render_path
-         pytesseract.pytesseract.tesseract_cmd = tesseract_path
-         logger.info("Tesseract path not initially found, but confirmed at expected Render path: %s", tesseract_path)
-     else:
-          logger.error(f"Tesseract not found at expected Render path: {expected_render_path}. Aptfile or build command might have failed.")
-          raise Exception(f"Tesseract OCR is not installed or accessible at {expected_render_path}. Check Render build logs and Aptfile.")
-
 else:
-    logger.error("Tesseract not found. Please install Tesseract OCR locally.")
-    logger.error("After installation, make sure to add Tesseract to your system PATH or set TESSERACT_PATH environment variable.")
-    raise Exception("Tesseract OCR is not installed. Please install it first.")
+    error_msg = "Tesseract OCR is not installed or not found in PATH. Please install it first."
+    logger.error(error_msg)
+    raise Exception(error_msg)
 
 def validate_image_data(image_data):
     if not image_data:
@@ -147,7 +127,6 @@ def validate_image_size(image):
     
     # Check file size
     buffer = io.BytesIO()
-    # Attempt to save with original format, fallback to JPEG
     try:
         image.save(buffer, format=image.format)
     except (IOError, KeyError):
@@ -158,12 +137,6 @@ def validate_image_size(image):
         raise ValueError(f"Image size ({(size/1024/1024):.2f} MB) too large. Maximum size is {MAX_IMAGE_SIZE/1024/1024} MB")
 
 def process_image(image_data):
-    # Pytesseract command should be set at module level startup
-    if not hasattr(pytesseract.pytesseract, 'tesseract_cmd') or not pytesseract.pytesseract.tesseract_cmd:
-         # This indicates a serious issue during application startup
-         logger.error("Pytesseract command not set during startup.")
-         raise Exception("Tesseract OCR is not configured correctly on the server.")
-
     try:
         validate_image_data(image_data)
         
@@ -200,60 +173,38 @@ def process_image(image_data):
         
     except Exception as e:
         logger.error("Error processing image: %s", str(e))
-        # Re-raise the exception to be caught by the endpoint handler
-        raise Exception(f"Error processing image: {str(e)}")
+        raise
 
 @app.route('/api/detect-text', methods=['POST'])
 @rate_limit
 def detect_text():
     try:
         if not request.is_json:
-            logger.error("Request is not JSON")
             return jsonify({'error': 'Request must be JSON'}), 400
             
         data = request.json
         image_data = data.get('image')
         
         if not image_data:
-            logger.error("No image data provided")
             return jsonify({'error': 'No image data provided'}), 400
             
-        logger.info("Processing image...")
         detected_text = process_image(image_data)
-        logger.info("Text detection completed")
         return jsonify({'text': detected_text})
         
     except ValueError as e:
-        logger.error("Validation error: %s", str(e))
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error("Error in detect_text endpoint: %s", str(e))
-        # It's important to return a JSON response with an error key here
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    tesseract_status = "Unknown"
-    if hasattr(pytesseract.pytesseract, 'tesseract_cmd') and pytesseract.pytesseract.tesseract_cmd:
-        tesseract_status = f"Configured at {pytesseract.pytesseract.tesseract_cmd}"
-    elif os.environ.get('RENDER') and os.path.exists('/usr/bin/tesseract'):
-         tesseract_status = "Expected at /usr/bin/tesseract (Render)"
-    else:
-         tesseract_status = "Not found or configured."
-         
     return jsonify({
         'status': 'healthy',
-        'tesseract_status': tesseract_status,
+        'tesseract_path': pytesseract.pytesseract.tesseract_cmd,
         'version': '1.0.0'
     })
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    logger.info("Starting Flask server on port %d (debug=%s)...", port, debug)
-    # Use gunicorn in production, Flask's development server for debugging locally
-    if debug:
-        app.run(debug=debug, port=port, host='0.0.0.0')
-    else:
-        # gunicorn is started via Procfile on Render
-        pass 
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port) 
